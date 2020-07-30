@@ -15,7 +15,7 @@ type HerokuDataAPI struct {
 func (api HerokuDataAPI) ReadCredential(addonID, name string) (*ReadCredentialResult, error) {
 	resultRef := &ReadCredentialJSONResult{}
 	data := getCredentialReadQuery(addonID)
-	err := api.Post("graphql", data, resultRef)
+	err := api.post("graphql", data, resultRef)
 
 	if err != nil {
 		return nil, err
@@ -44,7 +44,7 @@ func (api HerokuDataAPI) ReadCredential(addonID, name string) (*ReadCredentialRe
 func (api HerokuDataAPI) CreateCredential(addonID, name string) (bool, error) {
 	resultRef := &CreateCredentialJSONResult{}
 	data := getCredentialCreateQuery(addonID, name)
-	err := api.Post("graphql", data, resultRef)
+	err := api.post("graphql", data, resultRef)
 
 	if err != nil {
 		return false, err
@@ -55,7 +55,7 @@ func (api HerokuDataAPI) CreateCredential(addonID, name string) (bool, error) {
 	return resultRef.Data.CreateCredential != "", nil
 }
 
-func (api HerokuDataAPI) Post(path string, data JSONDataMap, resultRef interface{}) error {
+func (api HerokuDataAPI) post(path string, data JSONDataMap, resultRef interface{}) error {
 	jsonBody, err := json.Marshal(data)
 	if err != nil {
 		return err
