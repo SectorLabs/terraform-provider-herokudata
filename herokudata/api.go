@@ -3,6 +3,7 @@ package herokudata
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 )
@@ -12,9 +13,9 @@ type HerokuDataAPI struct {
 	URL    string
 }
 
-func (api HerokuDataAPI) ReadCredential(addonID, name string) (*ReadCredentialResult, error) {
-	resultRef := &ReadCredentialJSONResult{}
-	data := getCredentialReadQuery(addonID)
+func (api HerokuDataAPI) FetchCredential(addonID, name string) (*Credential, error) {
+	resultRef := &apiCredentialFetchResult{}
+	data := getAPICredentialFetchQuery(addonID)
 	err := api.post("graphql", data, resultRef)
 
 	if err != nil {
@@ -22,40 +23,64 @@ func (api HerokuDataAPI) ReadCredential(addonID, name string) (*ReadCredentialRe
 	}
 
 	credentials := resultRef.Data.Postgres.CredentialsList
-	if credentials == nil {
-		return nil, nil
-	}
-
-	// check if specified name exists in the list of credentials
-	for _, credential := range credentials {
-		// TODO: check state
-		if name == credential.Name {
-			result := ReadCredentialResult{
-				ID: name,
-				Name: name,
-				AddonID: addonID,
+	if credentials != nil {
+		// check if specified name exists in the list of credentials
+		for _, credential := range credentials {
+			// TODO: check state
+			if name == credential.Name {
+				result := Credential{
+					ID:      name,
+					Name:    name,
+					AddonID: addonID,
+				}
+				return &result, nil
 			}
-			return &result, nil
 		}
 	}
-	return nil, nil
+
+	// haven't found credential, return error
+	return nil, fmt.Errorf("HerokuDataAPI: Credential not found.")
 }
 
-func (api HerokuDataAPI) CreateCredential(addonID, name string) (bool, error) {
-	resultRef := &CreateCredentialJSONResult{}
-	data := getCredentialCreateQuery(addonID, name)
+func (api HerokuDataAPI) CreateCredential(addonID, name string) error {
+	resultRef := &apiCredentialCreateResult{}
+	data := getAPICredentialCreateQuery(addonID, name)
 	err := api.post("graphql", data, resultRef)
 
 	if err != nil {
-		return false, err
+		return err
 	}
 
 	// TODO: create permissions
 
-	return resultRef.Data.CreateCredential != "", nil
+	if len(resultRef.Errors) > 0 {
+		return fmt.Errorf(
+			"HerokuDataAPI: Create credential failed: %s",
+			resultRef.Errors[0].Message,
+		)
+	}
+	return nil
 }
 
-func (api HerokuDataAPI) post(path string, data JSONDataMap, resultRef interface{}) error {
+func (api HerokuDataAPI) DestroyCredential(addonID, name string) error {
+	resultRef := &apiCredentialDestroyResult{}
+	data := getAPICredentialDestroyQuery(addonID, name)
+	err := api.post("graphql", data, resultRef)
+
+	if err != nil {
+		return err
+	}
+
+	if len(resultRef.Errors) > 0 {
+		return fmt.Errorf(
+			"HerokuDataAPI: Destroy credential failed: %s",
+			resultRef.Errors[0].Message,
+		)
+	}
+	return nil
+}
+
+func (api HerokuDataAPI) post(path string, data apiDataMap, resultRef interface{}) error {
 	jsonBody, err := json.Marshal(data)
 	if err != nil {
 		return err
@@ -95,38 +120,4 @@ func (api HerokuDataAPI) post(path string, data JSONDataMap, resultRef interface
 	}
 
 	return nil
-}
-
-func getCredentialCreateQuery(addonID, name string) JSONDataMap {
-	return JSONDataMap{
-		"query": `
-			mutation CreateCredential($addonUUID: ID!, $name: String!) {
-				createCredential(
-					addon_uuid: $addonUUID
-					name: $name
-				)
-			}`,
-		"variables": JSONDataMap{
-			"addonUUID": addonID,
-			"name":      name,
-		},
-	}
-}
-
-func getCredentialReadQuery(addonID string) JSONDataMap {
-	return JSONDataMap{
-		"query": `
-			query FetchPostgresDetails($addonUUID: ID!) {
-	 			postgres (addon_uuid: $addonUUID) {
-	 				credentials_list {
-	 					name
-	 					uuid
-	 					state
-	 				}
-	 			}
-	 		}`,
-		"variables": JSONDataMap{
-			"addonUUID": addonID,
-		},
-	}
 }

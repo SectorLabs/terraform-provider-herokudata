@@ -27,43 +27,50 @@ func resourceCredential() *schema.Resource {
 }
 
 func resourceCredentialCreate(d *schema.ResourceData, m interface{}) error {
-	log.Print("[INFO] Creating credential resource")
-
 	api := m.(*Config).API
 	name := d.Get("name").(string)
 	addonID := d.Get("addon_id").(string)
+	log.Printf("[INFO] Creating credential resource: %s", name)
 
-	ok, err := api.CreateCredential(addonID, name)
-
-	if err == nil && ok {
-		d.SetId(name)
+	err := api.CreateCredential(addonID, name)
+	if err != nil {
+		return err
 	}
 
+	d.SetId(name)
 	return resourceCredentialRead(d, m)
 }
 
 func resourceCredentialRead(d *schema.ResourceData, m interface{}) error {
-	log.Print("[INFO] Checking if credential resource exists")
-
 	api := m.(*Config).API
 	name := d.Get("name").(string)
 	addonID := d.Get("addon_id").(string)
+	log.Printf("[INFO] Fetching credential resource: %s", name)
 
-	result, err := api.ReadCredential(addonID, name)
+	result, err := api.FetchCredential(addonID, name)
 
-	if err != nil || result == nil {
-		log.Print("[WARN] Resource not found")
+	if err != nil {
 		d.SetId("")
-		return nil
+		return err
 	}
 
 	d.Set("name", result.Name)
 	d.Set("addon_id", result.AddonID)
-
 	return nil
 }
 
 func resourceCredentialDelete(d *schema.ResourceData, m interface{}) error {
-	// TODO: implement
+	api := m.(*Config).API
+	name := d.Get("name").(string)
+	addonID := d.Get("addon_id").(string)
+	log.Printf("[INFO] Deleting credential resource: %s", name)
+
+	err := api.DestroyCredential(addonID, name)
+
+	if err != nil {
+		return err
+	}
+
+	d.SetId("")
 	return nil
 }
