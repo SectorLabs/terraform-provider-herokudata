@@ -2,7 +2,6 @@ package herokudata
 
 import (
 	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
-	"log"
 )
 
 func Provider() *schema.Provider {
@@ -18,29 +17,22 @@ func Provider() *schema.Provider {
 				Optional:    true,
 				DefaultFunc: schema.EnvDefaultFunc("HEROKUDATA_API_URL", DefaultURL),
 			},
+			"poll_timeout_duration": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Default:  "60s",
+			},
+			"poll_wait_duration": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Default:  "2s",
+			},
 		},
 
 		ResourcesMap: map[string]*schema.Resource{
 			"herokudata_credential": resourceCredential(),
 		},
 
-		ConfigureFunc: providerConfigure,
+		ConfigureFunc: InitializeConfig,
 	}
-}
-
-func providerConfigure(d *schema.ResourceData) (interface{}, error) {
-	log.Println("[INFO] Initializing HerokuData provider")
-	config := &Config{}
-
-	if apiKey, ok := d.GetOk("api_key"); ok {
-		config.APIKey = apiKey.(string)
-	}
-
-	if url, ok := d.GetOk("url"); ok {
-		config.URL = url.(string)
-	}
-
-	config.InitializeAPI()
-
-	return config, nil
 }

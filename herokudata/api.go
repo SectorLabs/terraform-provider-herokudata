@@ -6,12 +6,20 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"time"
 )
 
 type HerokuDataAPI struct {
-	APIKey string
-	URL    string
+	APIKey              string
+	URL                 string
+	PollWaitDuration    time.Duration
+	PollTimeoutDuration time.Duration
 }
+
+const (
+	PollMaxStep           = 3
+	CredentialActiveState = "active"
+)
 
 func (api HerokuDataAPI) FetchCredential(addonID, name string) (*Credential, error) {
 	resultRef := &apiCredentialFetchResult{}
@@ -27,7 +35,7 @@ func (api HerokuDataAPI) FetchCredential(addonID, name string) (*Credential, err
 		// check if specified name exists in the list of credentials
 		for _, credential := range credentials {
 			// TODO: check state
-			if name == credential.Name {
+			if name == credential.Name && credential.State == CredentialActiveState {
 				result := Credential{
 					ID:      name,
 					Name:    name,
@@ -39,7 +47,7 @@ func (api HerokuDataAPI) FetchCredential(addonID, name string) (*Credential, err
 	}
 
 	// haven't found credential, return error
-	return nil, fmt.Errorf("HerokuDataAPI: Credential not found.")
+	return nil, fmt.Errorf("HerokuDataAPI: Credential not found")
 }
 
 func (api HerokuDataAPI) CreateCredential(addonID, name string) error {
@@ -51,14 +59,27 @@ func (api HerokuDataAPI) CreateCredential(addonID, name string) error {
 		return err
 	}
 
-	// TODO: create permissions
-
 	if len(resultRef.Errors) > 0 {
 		return fmt.Errorf(
 			"HerokuDataAPI: Create credential failed: %s",
 			resultRef.Errors[0].Message,
 		)
 	}
+
+	// we need to wait until the credential is created, in order to set permissions
+	err = api.poll(
+		func() bool {
+			_, err := api.FetchCredential(addonID, name)
+			return err == nil
+		},
+		func() error {
+			return fmt.Errorf("HerokuDataAPI: Create credential has timed out")
+		},
+	)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -120,4 +141,25 @@ func (api HerokuDataAPI) post(path string, data apiDataMap, resultRef interface{
 	}
 
 	return nil
+}
+
+func (api HerokuDataAPI) poll(callback func() bool, err func() error) error {
+	start := time.Now()
+	elapsed := time.Now().Sub(start)
+	step := 0
+
+	for ; elapsed < api.PollTimeoutDuration; elapsed = time.Now().Sub(start) {
+		waitModifier := 1.0
+		if step < PollMaxStep {
+			waitModifier = float64(step) / PollMaxStep
+		}
+		time.Sleep(time.Duration(waitModifier) * api.PollWaitDuration)
+		step += 1
+
+		if ok := callback(); ok {
+			return nil
+		}
+	}
+
+	return err()
 }
