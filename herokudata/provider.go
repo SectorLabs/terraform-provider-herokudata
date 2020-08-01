@@ -25,7 +25,7 @@ func Provider() *schema.Provider {
 			"poll_wait_duration": {
 				Type:     schema.TypeString,
 				Optional: true,
-				Default:  "2s",
+				Default:  "4s",
 			},
 		},
 

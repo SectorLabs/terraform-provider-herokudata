@@ -2,6 +2,7 @@ package herokudata
 
 import (
 	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
+	"github.com/hashicorp/terraform-plugin-sdk/helper/validation"
 	"log"
 )
 
@@ -22,6 +23,14 @@ func resourceCredential() *schema.Resource {
 				Required: true,
 				ForceNew: true,
 			},
+			"permission": &schema.Schema{
+				Type:     schema.TypeString,
+				Optional: true,
+				ForceNew: true,
+				ValidateFunc: validation.StringInSlice([]string{
+					PermissionReadonly, PermissionReadWrite,
+				}, true),
+			},
 		},
 	}
 }
@@ -30,9 +39,10 @@ func resourceCredentialCreate(d *schema.ResourceData, m interface{}) error {
 	api := m.(*Config).API
 	name := d.Get("name").(string)
 	addonID := d.Get("addon_id").(string)
+	permission := d.Get("permission").(string)
 	log.Printf("[INFO] Creating credential resource: %s", name)
 
-	err := api.CreateCredential(addonID, name)
+	err := api.CreateCredential(addonID, name, permission)
 	if err != nil {
 		return err
 	}

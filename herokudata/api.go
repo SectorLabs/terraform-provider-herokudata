@@ -21,6 +21,11 @@ const (
 	CredentialActiveState = "active"
 )
 
+const (
+	PermissionReadonly  = "readonly"
+	PermissionReadWrite = "readwrite"
+)
+
 func (api HerokuDataAPI) FetchCredential(addonID, name string) (*Credential, error) {
 	resultRef := &apiCredentialFetchResult{}
 	data := getAPICredentialFetchQuery(addonID)
@@ -37,9 +42,10 @@ func (api HerokuDataAPI) FetchCredential(addonID, name string) (*Credential, err
 			// TODO: check state
 			if name == credential.Name && credential.State == CredentialActiveState {
 				result := Credential{
-					ID:      name,
-					Name:    name,
-					AddonID: addonID,
+					ID:       name,
+					Name:     name,
+					AddonID:  addonID,
+					Database: credential.Database,
 				}
 				return &result, nil
 			}
@@ -50,7 +56,7 @@ func (api HerokuDataAPI) FetchCredential(addonID, name string) (*Credential, err
 	return nil, fmt.Errorf("HerokuDataAPI: Credential not found")
 }
 
-func (api HerokuDataAPI) CreateCredential(addonID, name string) error {
+func (api HerokuDataAPI) CreateCredential(addonID, name, permission string) error {
 	resultRef := &apiCredentialCreateResult{}
 	data := getAPICredentialCreateQuery(addonID, name)
 	err := api.post("graphql", data, resultRef)
@@ -67,15 +73,19 @@ func (api HerokuDataAPI) CreateCredential(addonID, name string) error {
 	}
 
 	// we need to wait until the credential is created, in order to set permissions
-	err = api.poll(
-		func() bool {
-			_, err := api.FetchCredential(addonID, name)
-			return err == nil
+	credential, err := api.poll(
+		func() (interface{}, error) {
+			return api.FetchCredential(addonID, name)
 		},
 		func() error {
 			return fmt.Errorf("HerokuDataAPI: Create credential has timed out")
 		},
 	)
+	if err != nil {
+		return err
+	}
+
+	err = api.setPermission(credential.(*Credential), permission)
 	if err != nil {
 		return err
 	}
@@ -98,6 +108,31 @@ func (api HerokuDataAPI) DestroyCredential(addonID, name string) error {
 			resultRef.Errors[0].Message,
 		)
 	}
+	return nil
+}
+
+func (api HerokuDataAPI) setPermission(credential *Credential, permission string) error {
+	if permission == "" {
+		return nil
+	}
+
+	resultRef := &apiCredentialSetPermissionsResult{}
+	data := getAPICredentialPermissionQuery(
+		credential.AddonID, credential.Name, credential.Database, permission,
+	)
+	err := api.post("graphql", data, resultRef)
+
+	if err != nil {
+		return err
+	}
+
+	if len(resultRef.Errors) > 0 {
+		return fmt.Errorf(
+			"HerokuDataAPI: Set credential permission failed: %s",
+			resultRef.Errors[0].Message,
+		)
+	}
+
 	return nil
 }
 
@@ -143,7 +178,9 @@ func (api HerokuDataAPI) post(path string, data apiDataMap, resultRef interface{
 	return nil
 }
 
-func (api HerokuDataAPI) poll(callback func() bool, err func() error) error {
+func (api HerokuDataAPI) poll(
+	callback func() (interface{}, error), timeoutError func() error,
+) (interface{}, error) {
 	start := time.Now()
 	elapsed := time.Now().Sub(start)
 	step := 0
@@ -156,10 +193,10 @@ func (api HerokuDataAPI) poll(callback func() bool, err func() error) error {
 		time.Sleep(time.Duration(waitModifier) * api.PollWaitDuration)
 		step += 1
 
-		if ok := callback(); ok {
-			return nil
+		if result, err := callback(); err == nil {
+			return result, nil
 		}
 	}
 
-	return err()
+	return nil, timeoutError()
 }

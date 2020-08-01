@@ -1,20 +1,24 @@
 package herokudata
 
 type Credential struct {
-	ID      string
-	Name    string
-	AddonID string
+	ID       string
+	Name     string
+	AddonID  string
+	Database string
 }
 
 type apiDataMap map[string]interface{}
+
+type apiDataList []interface{}
 
 type apiCredentialFetchResult struct {
 	Data struct {
 		Postgres struct {
 			CredentialsList []struct {
-				Name  string `json:"name"`
-				UUID  string `json:"uuid"`
-				State string `json:"state"`
+				Name     string `json:"name"`
+				UUID     string `json:"uuid"`
+				Database string `json:"database"`
+				State    string `json:"state"`
 			} `json:"credentials_list"`
 		} `json:"postgres"`
 	} `json:"data"`
@@ -38,18 +42,28 @@ type apiCredentialDestroyResult struct {
 	} `json:"errors"`
 }
 
+type apiCredentialSetPermissionsResult struct {
+	Data struct {
+		SetPostgresPermissions bool `json:"setPostgresPermissions"`
+	} `json:"data"`
+	Errors []struct {
+		Message string `json:"message"`
+	} `json:"errors"`
+}
+
 func getAPICredentialFetchQuery(addonID string) apiDataMap {
 	return apiDataMap{
 		"query": `
 			query FetchPostgresDetails($addonUUID: ID!) {
-	 			postgres (addon_uuid: $addonUUID) {
-	 				credentials_list {
-	 					name
-	 					uuid
-	 					state
-	 				}
-	 			}
-	 		}`,
+				postgres (addon_uuid: $addonUUID) {
+					credentials_list {
+						name
+						uuid
+						database
+						state
+					}
+				}
+			}`,
 		"variables": apiDataMap{
 			"addonUUID": addonID,
 		},
@@ -84,6 +98,68 @@ func getAPICredentialDestroyQuery(addonID, name string) apiDataMap {
 		"variables": apiDataMap{
 			"addonUUID": addonID,
 			"name":      name,
+		},
+	}
+}
+
+func getAPICredentialPermissionQuery(addonID, name, database, permission string) apiDataMap {
+	var databasePrivileges, tablePrivileges, sequencePrivileges apiDataList
+
+	if permission == PermissionReadonly {
+		databasePrivileges = apiDataList{"CONNECT"}
+		tablePrivileges = apiDataList{"SELECT"}
+		sequencePrivileges = apiDataList{"SELECT"}
+	}
+	if permission == PermissionReadWrite {
+		databasePrivileges = apiDataList{"CONNECT", "TEMPORARY"}
+		tablePrivileges = apiDataList{"SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE"}
+		sequencePrivileges = apiDataList{"SELECT", "USAGE"}
+	}
+
+	return apiDataMap{
+		"query": `
+			mutation SetPostgresPermissions($addonUUID: ID!, $role: String!, $acls: [PostgresACLInput]!) {
+				setPostgresPermissions(
+					addon_uuid: $addonUUID
+					role: $role
+					acls: $acls
+				)
+			}`,
+		"variables": apiDataMap{
+			"addonUUID": addonID,
+			"role":      name,
+			"acls": apiDataList{
+				apiDataMap{
+					"kind":       "database",
+					"name":       database,
+					"privileges": databasePrivileges,
+				},
+				apiDataMap{
+					"kind":       "table",
+					"default":    true,
+					"privileges": tablePrivileges,
+				},
+				apiDataMap{
+					"kind":       "sequence",
+					"default":    true,
+					"privileges": sequencePrivileges,
+				},
+				apiDataMap{
+					"kind":       "schema",
+					"name":       "public",
+					"privileges": apiDataList{"USAGE"},
+				},
+				apiDataMap{
+					"kind":       "table",
+					"schema":     "public",
+					"privileges": tablePrivileges,
+				},
+				apiDataMap{
+					"kind":       "sequence",
+					"schema":     "public",
+					"privileges": sequencePrivileges,
+				},
+			},
 		},
 	}
 }

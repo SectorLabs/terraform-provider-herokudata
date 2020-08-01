@@ -36,5 +36,6 @@ provider "herokudata" {
 resource "herokudata_credential" "my_credential" {
   addon_id = "<ADDON_ID>"
   name = "<CREDENTIAL_NAME>"
+  permission = "readonly|readwrite"
 }
 ```
