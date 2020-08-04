@@ -41,6 +41,8 @@ jobs:
                     VERSION=$(git tag --points-at HEAD)
                     if [[ -n ${VERSION} ]]; then
                         ghr -t ${GITHUB_TOKEN} -u ${CIRCLE_PROJECT_USERNAME} -r ${CIRCLE_PROJECT_REPONAME} -c ${CIRCLE_SHA1} ${VERSION} ./build/
+                    else
+                        echo "Release tag not present. skipping."
                     fi
 
 workflows:
