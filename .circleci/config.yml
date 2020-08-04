@@ -4,21 +4,55 @@ jobs:
         docker:
             - image: golang:1.12.6-alpine3.9
         steps:
-            - checkout
+            - checkout:
+                post: git fetch --tags && git tag
 
             - run:
                 name: Install packages
-                command: apk add make git
+                command: apk add bash make git
 
             - run:
-                name: Create release
-                command: make release
+                name: Build binaries
+                command: |
+                    mkdir /build
+                    ./scripts/build_release.sh /build
+
+            - persist_to_workspace:
+                root: /build
+                paths:
+                    - ./*
 
             - store_artifacts:
-                path: ./terraform-provider-herokudata_v0.1
+                path: /build
+
+    publish-release:
+        docker:
+            - image: cibuilds/github:0.10
+        steps:
+            - checkout:
+                post: git fetch --tags && git tag
+
+            - attach_workspace:
+                at: ./build
+
+            - run:
+                name: "Publish Release on GitHub"
+                command: |
+                    VERSION=$(git tag --points-at HEAD)
+                    if [[ -n ${VERSION} ]]; then
+                        ghr -t ${GITHUB_TOKEN} -u ${CIRCLE_PROJECT_USERNAME} -r ${CIRCLE_PROJECT_REPONAME} -c ${CIRCLE_SHA1} ${VERSION} ./build/
+                    fi
 
 workflows:
     version: 2
     build:
         jobs:
             - build
+
+            - publish-release:
+                requires:
+                    - build
+                filters:
+                    branches:
+                        only:
+                            - master
