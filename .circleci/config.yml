@@ -4,17 +4,40 @@ jobs:
         docker:
             - image: golang:1.12.6-alpine3.9
         steps:
-            - checkout:
-                post: git fetch --tags && git tag
-
             - run:
                 name: Install packages
                 command: apk add bash make git
 
+            - checkout
+
             - run:
-                name: Build binaries
+                name: Build binary
+                command: make build
+
+            - store_artifacts:
+                path: ./terraform-provider-herokudata
+
+    build-release:
+        docker:
+            - image: golang:1.12.6-alpine3.9
+        steps:
+            - run:
+                name: Install packages
+                command: apk add bash make git openssh
+
+            - run:
+                name: Initialize repository
+                command: |
+                    mkdir ~/.ssh/ && ssh-keyscan github.com > ~/.ssh/known_hosts
+                    git clone ${CIRCLE_REPOSITORY_URL} terraform-provider-herokudata
+                    cd terraform-provider-herokudata
+                    git checkout ${CIRCLE_TAG}
+
+            - run:
+                name: Build binary
                 command: |
                     mkdir /build
+                    cd terraform-provider-herokudata
                     ./scripts/build_release.sh /build
 
             - persist_to_workspace:
@@ -29,20 +52,17 @@ jobs:
         docker:
             - image: cibuilds/github:0.10
         steps:
-            - checkout:
-                post: git fetch --tags && git tag
-
             - attach_workspace:
                 at: ./build
 
             - run:
                 name: "Publish Release on GitHub"
                 command: |
-                    VERSION=$(git tag --points-at HEAD)
+                    VERSION=${CIRCLE_TAG}
                     if [[ -n ${VERSION} ]]; then
                         ghr -t ${GITHUB_TOKEN} -u ${CIRCLE_PROJECT_USERNAME} -r ${CIRCLE_PROJECT_REPONAME} -c ${CIRCLE_SHA1} ${VERSION} ./build/
                     else
-                        echo "Release tag not present. skipping."
+                        echo "Version tag not present. skipping."
                     fi
 
 workflows:
@@ -51,10 +71,18 @@ workflows:
         jobs:
             - build
 
-            - publish-release:
-                requires:
-                    - build
+            - build-release:
                 filters:
                     branches:
-                        only:
-                            - master
+                        ignore: /.*/
+                    tags:
+                        only: /^v\d+\.\d+$/
+
+            - publish-release:
+                requires:
+                    - build-release
+                filters:
+                    branches:
+                        ignore: /.*/
+                    tags:
+                        only: /^v\d+\.\d+$/
