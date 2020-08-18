@@ -12,6 +12,10 @@ func resourceCredential() *schema.Resource {
 		Read:   resourceCredentialRead,
 		Delete: resourceCredentialDelete,
 
+		Importer: &schema.ResourceImporter{
+			State: schema.ImportStatePassthrough,
+		},
+
 		Schema: map[string]*schema.Schema{
 			"name": &schema.Schema{
 				Type:     schema.TypeString,
@@ -42,22 +46,20 @@ func resourceCredentialCreate(d *schema.ResourceData, m interface{}) error {
 	permission := d.Get("permission").(string)
 	log.Printf("[INFO] Creating credential resource: %s", name)
 
-	err := api.CreateCredential(addonID, name, permission)
+	credential, err := api.CreateCredential(addonID, name, permission)
 	if err != nil {
 		return err
 	}
 
-	d.SetId(name)
+	d.SetId(credential.ID)
 	return resourceCredentialRead(d, m)
 }
 
 func resourceCredentialRead(d *schema.ResourceData, m interface{}) error {
 	api := m.(*Config).API
-	name := d.Get("name").(string)
-	addonID := d.Get("addon_id").(string)
-	log.Printf("[INFO] Fetching credential resource: %s", name)
+	log.Printf("[INFO] Fetching credential resource: %s", d.Id())
 
-	result, err := api.FetchCredential(addonID, name)
+	result, err := api.FetchCredential(d.Id())
 
 	if err != nil {
 		d.SetId("")
@@ -66,16 +68,15 @@ func resourceCredentialRead(d *schema.ResourceData, m interface{}) error {
 
 	d.Set("name", result.Name)
 	d.Set("addon_id", result.AddonID)
+	d.Set("permission", result.Permission)
 	return nil
 }
 
 func resourceCredentialDelete(d *schema.ResourceData, m interface{}) error {
 	api := m.(*Config).API
-	name := d.Get("name").(string)
-	addonID := d.Get("addon_id").(string)
-	log.Printf("[INFO] Deleting credential resource: %s", name)
+	log.Printf("[INFO] Deleting credential resource: %s", d.Id())
 
-	err := api.DestroyCredential(addonID, name)
+	err := api.DestroyCredential(d.Id())
 
 	if err != nil {
 		return err

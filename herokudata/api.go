@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -19,6 +20,9 @@ type HerokuDataAPI struct {
 const (
 	PollMaxStep           = 3
 	CredentialActiveState = "active"
+	IDSeparator           = "/"
+	PrivilegeSelect       = "SELECT"
+	PermissionObjectType  = "relation"
 )
 
 const (
@@ -26,11 +30,16 @@ const (
 	PermissionReadWrite = "readwrite"
 )
 
-func (api HerokuDataAPI) FetchCredential(addonID, name string) (*Credential, error) {
+func (api HerokuDataAPI) FetchCredential(id string) (*Credential, error) {
 	resultRef := &apiCredentialFetchResult{}
-	data := getAPICredentialFetchQuery(addonID)
-	err := api.post("graphql", data, resultRef)
 
+	addonID, name, err := parseID(id)
+	if err != nil {
+		return nil, err
+	}
+
+	data := getAPICredentialFetchQuery(addonID)
+	err = api.post("graphql", data, resultRef)
 	if err != nil {
 		return nil, err
 	}
@@ -39,13 +48,18 @@ func (api HerokuDataAPI) FetchCredential(addonID, name string) (*Credential, err
 	if credentials != nil {
 		// check if specified name exists in the list of credentials
 		for _, credential := range credentials {
-			// TODO: check state
 			if name == credential.Name && credential.State == CredentialActiveState {
+				permission, err := api.getPermission(addonID, name)
+				if err != nil {
+					return nil, err
+				}
+
 				result := Credential{
-					ID:       name,
-					Name:     name,
-					AddonID:  addonID,
-					Database: credential.Database,
+					ID:         makeID(addonID, name),
+					Name:       name,
+					AddonID:    addonID,
+					Database:   credential.Database,
+					Permission: permission,
 				}
 				return &result, nil
 			}
@@ -56,48 +70,54 @@ func (api HerokuDataAPI) FetchCredential(addonID, name string) (*Credential, err
 	return nil, fmt.Errorf("HerokuDataAPI: Credential not found")
 }
 
-func (api HerokuDataAPI) CreateCredential(addonID, name, permission string) error {
+func (api HerokuDataAPI) CreateCredential(addonID, name, permission string) (*Credential, error) {
 	resultRef := &apiCredentialCreateResult{}
 	data := getAPICredentialCreateQuery(addonID, name)
 	err := api.post("graphql", data, resultRef)
 
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if len(resultRef.Errors) > 0 {
-		return fmt.Errorf(
+		return nil, fmt.Errorf(
 			"HerokuDataAPI: Create credential failed: %s",
 			resultRef.Errors[0].Message,
 		)
 	}
 
+	id := makeID(addonID, name)
 	// we need to wait until the credential is created, in order to set permissions
 	credential, err := api.poll(
 		func() (interface{}, error) {
-			return api.FetchCredential(addonID, name)
+			return api.FetchCredential(id)
 		},
 		func() error {
 			return fmt.Errorf("HerokuDataAPI: Create credential has timed out")
 		},
 	)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	err = api.setPermission(credential.(*Credential), permission)
 	if err != nil {
+		return nil, err
+	}
+
+	return credential.(*Credential), nil
+}
+
+func (api HerokuDataAPI) DestroyCredential(id string) error {
+	resultRef := &apiCredentialDestroyResult{}
+
+	addonID, name, err := parseID(id)
+	if err != nil {
 		return err
 	}
 
-	return nil
-}
-
-func (api HerokuDataAPI) DestroyCredential(addonID, name string) error {
-	resultRef := &apiCredentialDestroyResult{}
 	data := getAPICredentialDestroyQuery(addonID, name)
-	err := api.post("graphql", data, resultRef)
-
+	err = api.post("graphql", data, resultRef)
 	if err != nil {
 		return err
 	}
@@ -111,13 +131,25 @@ func (api HerokuDataAPI) DestroyCredential(addonID, name string) error {
 	return nil
 }
 
+func parseID(id string) (string, string, error) {
+	idParts := strings.Split(id, IDSeparator)
+	if len(idParts) < 2 {
+		return "", "", fmt.Errorf("HerokuDataAPI: Given ID was not in a correct format: addon_id%sname", IDSeparator)
+	}
+	return idParts[0], idParts[1], nil
+}
+
+func makeID(addonID, name string) string {
+	return addonID + IDSeparator + name
+}
+
 func (api HerokuDataAPI) setPermission(credential *Credential, permission string) error {
 	if permission == "" {
 		return nil
 	}
 
-	resultRef := &apiCredentialSetPermissionsResult{}
-	data := getAPICredentialPermissionQuery(
+	resultRef := &apiCredentialPermissionsSetResult{}
+	data := getAPICredentialPermissionSetQuery(
 		credential.AddonID, credential.Name, credential.Database, permission,
 	)
 	err := api.post("graphql", data, resultRef)
@@ -134,6 +166,32 @@ func (api HerokuDataAPI) setPermission(credential *Credential, permission string
 	}
 
 	return nil
+}
+
+func (api HerokuDataAPI) getPermission(addonID, name string) (string, error) {
+	resultRef := &apiCredentialPermissionsGetResult{}
+
+	data := getAPICredentialPermissionGetQuery(addonID)
+	err := api.post("graphql", data, resultRef)
+	if err != nil {
+		return "", err
+	}
+
+	acls := resultRef.Data.PostgresSchema.DefaultAcls
+	if acls != nil {
+		for _, acl := range acls {
+			if acl.Role != name || acl.ObjectType != PermissionObjectType {
+				continue
+			}
+			// TODO: make this check better
+			if len(acl.Privileges) == 1 && acl.Privileges[0] == PrivilegeSelect {
+				return PermissionReadonly, nil
+			}
+			return PermissionReadWrite, nil
+		}
+	}
+
+	return "", nil
 }
 
 func (api HerokuDataAPI) post(path string, data apiDataMap, resultRef interface{}) error {

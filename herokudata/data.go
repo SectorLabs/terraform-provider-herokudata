@@ -1,10 +1,11 @@
 package herokudata
 
 type Credential struct {
-	ID       string
-	Name     string
-	AddonID  string
-	Database string
+	ID         string
+	Name       string
+	AddonID    string
+	Database   string
+	Permission string
 }
 
 type apiDataMap map[string]interface{}
@@ -42,9 +43,24 @@ type apiCredentialDestroyResult struct {
 	} `json:"errors"`
 }
 
-type apiCredentialSetPermissionsResult struct {
+type apiCredentialPermissionsSetResult struct {
 	Data struct {
 		SetPostgresPermissions bool `json:"setPostgresPermissions"`
+	} `json:"data"`
+	Errors []struct {
+		Message string `json:"message"`
+	} `json:"errors"`
+}
+
+type apiCredentialPermissionsGetResult struct {
+	Data struct {
+		PostgresSchema struct {
+			DefaultAcls []struct {
+				Role       string   `json:"role"`
+				ObjectType string   `json:"object_type"`
+				Privileges []string `json:"privileges"`
+			} `json:"default_acls"`
+		} `json:"postgresSchema"`
 	} `json:"data"`
 	Errors []struct {
 		Message string `json:"message"`
@@ -102,7 +118,26 @@ func getAPICredentialDestroyQuery(addonID, name string) apiDataMap {
 	}
 }
 
-func getAPICredentialPermissionQuery(addonID, name, database, permission string) apiDataMap {
+func getAPICredentialPermissionGetQuery(addonID string) apiDataMap {
+	return apiDataMap{
+		"query": `
+			query FetchSchema($addonUUID: ID!) {
+				postgresSchema(addon_uuid: $addonUUID) {
+					default_acls {...DefaultACLFragment}
+				}
+			}
+			fragment DefaultACLFragment on PostgresSchemaDefaultACL {
+				object_type
+				role
+				privileges
+			}`,
+		"variables": apiDataMap{
+			"addonUUID": addonID,
+		},
+	}
+}
+
+func getAPICredentialPermissionSetQuery(addonID, name, database, permission string) apiDataMap {
 	var databasePrivileges, tablePrivileges, sequencePrivileges apiDataList
 
 	if permission == PermissionReadonly {
