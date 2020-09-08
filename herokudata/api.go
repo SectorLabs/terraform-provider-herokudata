@@ -48,21 +48,23 @@ func (api HerokuDataAPI) FetchCredential(id string) (*Credential, error) {
 	if credentials != nil {
 		// check if specified name exists in the list of credentials
 		for _, credential := range credentials {
-			if name == credential.Name && credential.State == CredentialActiveState {
-				permission, err := api.getPermission(addonID, name)
-				if err != nil {
-					return nil, err
-				}
-
-				result := Credential{
-					ID:         makeID(addonID, name),
-					Name:       name,
-					AddonID:    addonID,
-					Database:   credential.Database,
-					Permission: permission,
-				}
-				return &result, nil
+			if name != credential.Name || credential.State != CredentialActiveState {
+				continue
 			}
+
+			permission, err := api.getPermission(addonID, name)
+			if err != nil {
+				return nil, err
+			}
+
+			result := Credential{
+				ID:         makeID(addonID, name),
+				Name:       name,
+				AddonID:    addonID,
+				Database:   credential.Database,
+				Permission: permission,
+			}
+			return &result, nil
 		}
 	}
 
@@ -128,6 +130,7 @@ func (api HerokuDataAPI) DestroyCredential(id string) error {
 			resultRef.Errors[0].Message,
 		)
 	}
+
 	return nil
 }
 

@@ -11,6 +11,7 @@ func resourceCredential() *schema.Resource {
 		Create: resourceCredentialCreate,
 		Read:   resourceCredentialRead,
 		Delete: resourceCredentialDelete,
+		Update: resourceCredentialUpdate,
 
 		Importer: &schema.ResourceImporter{
 			State: schema.ImportStatePassthrough,
@@ -30,7 +31,6 @@ func resourceCredential() *schema.Resource {
 			"permission": &schema.Schema{
 				Type:     schema.TypeString,
 				Optional: true,
-				ForceNew: true,
 				ValidateFunc: validation.StringInSlice([]string{
 					PermissionReadonly, PermissionReadWrite,
 				}, true),
@@ -84,4 +84,26 @@ func resourceCredentialDelete(d *schema.ResourceData, m interface{}) error {
 
 	d.SetId("")
 	return nil
+}
+
+func resourceCredentialUpdate(d *schema.ResourceData, m interface{}) error {
+	api := m.(*Config).API
+	log.Printf("[INFO] Updating credential resource: %s", d.Id())
+
+	if d.HasChange("permission") {
+		credential, err := api.FetchCredential(d.Id())
+
+		if err != nil {
+			return err
+		}
+
+		permission := d.Get("permission").(string)
+		err = api.setPermission(credential, permission)
+
+		if err != nil {
+			return err
+		}
+	}
+
+	return resourceCredentialRead(d, m)
 }
