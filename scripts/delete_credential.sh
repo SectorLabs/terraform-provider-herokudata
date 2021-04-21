@@ -15,5 +15,9 @@ curl --request POST \
   --header "authorization: Bearer ${auth_token}" \
   --header "content-type: application/json" \
   --data '{
-    "query":"mutation DestroyCredential($addonUUID: ID!, $name: String!) {    destroyCredential(\n      addon_uuid: $addonUUID\n      name: $name\n    )\n  }","variables":{"addonUUID":"'${addon_id}'","name":"'${credential_name}'"}}
-' | python -m json.tool
+    "query":"mutation DestroyCredential($addonUUID: ID!, $name: String!) {    destroyCredential(\n      addon_uuid: $addonUUID\n      name: $name\n    )\n  }",
+    "variables":{
+        "addonUUID":"'${addon_id}'",
+        "name":"'${credential_name}'"
+    }
+}' | python -m json.tool

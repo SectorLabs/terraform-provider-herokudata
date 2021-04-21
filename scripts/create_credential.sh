@@ -15,5 +15,9 @@ curl --request POST \
   --header "authorization: Bearer ${auth_token}" \
   --header "content-type: application/json" \
   --data '{
-    "query":"mutation CreateCredential($addonUUID: ID!, $name: String!) {    createCredential(\n      addon_uuid: $addonUUID\n      name: $name\n    )\n  }","variables":{"addonUUID":"'${addon_id}'","name":"'${credential_name}'"}}
-' | python -m json.tool
+    "query":"mutation CreateCredential($addonUUID: ID!, $name: String!) {    createCredential(\n      addon_uuid: $addonUUID\n      name: $name\n    )\n  }",
+    "variables":{
+        "addonUUID":"'${addon_id}'",
+        "name":"'${credential_name}'"
+    }
+}' | python -m json.tool
