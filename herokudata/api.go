@@ -18,17 +18,25 @@ type HerokuDataAPI struct {
 }
 
 const (
-	PollMaxStep           = 3
-	CredentialActiveState = "active"
-	IDSeparator           = "/"
-	PrivilegeSelect       = "SELECT"
-	PermissionObjectType  = "relation"
+	PollMaxStep            = 3
+	CredentialActiveState  = "active"
+	CredentialNullState    = "null"
+	CredentialRotatedState = "rotation_completed"
+	IDSeparator            = "/"
+	PrivilegeSelect        = "SELECT"
+	PermissionObjectType   = "relation"
 )
 
 const (
 	PermissionReadonly  = "readonly"
 	PermissionReadWrite = "readwrite"
 )
+
+var CredentialExistsStates = map[string]bool{
+	CredentialActiveState:  true,
+	CredentialRotatedState: true,
+	CredentialNullState:    true,
+}
 
 func (api HerokuDataAPI) FetchCredential(id string) (*Credential, error) {
 	resultRef := &apiCredentialFetchResult{}
@@ -48,8 +56,15 @@ func (api HerokuDataAPI) FetchCredential(id string) (*Credential, error) {
 	if credentials != nil {
 		// check if specified name exists in the list of credentials
 		for _, credential := range credentials {
-			if name != credential.Name || credential.State != CredentialActiveState {
+			if name != credential.Name {
 				continue
+			}
+
+			if _, ok := CredentialExistsStates[credential.State]; !ok {
+				return nil, fmt.Errorf(
+					"HerokuDataAPI: Credential found, but has inactive state: %s",
+					credential.State,
+				)
 			}
 
 			permission, err := api.getPermission(addonID, name)
